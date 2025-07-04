@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  db:
+    image: ankane/pgvector
+    container_name: pgvector-db
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: rfq_db
+      POSTGRES_USER: rfq_user
+      POSTGRES_PASSWORD: rfq_pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  app:
+    build: ./app
+    container_name: rfq-app
+    depends_on:
+      - db
+    environment:
+      PYTHONPATH: /app
+      POSTGRES_DB: rfq_db
+      POSTGRES_USER: rfq_user
+      POSTGRES_PASSWORD: rfq_pass
+      DATABASE_URL: postgres://rfq_user:rfq_pass@db:5432/rfq_db
+    volumes:
+      - ./app:/app
+    command: ["python", "main.py"]
+
+volumes:
+  pgdata:

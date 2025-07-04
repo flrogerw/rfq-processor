@@ -1,0 +1,27 @@
+You are an expert RFQ analyzer. Given the unstructured text of a government RFQ email and its attachments,
+extract the following into JSON format:
+
+- `due_date` in ISO format (YYYY-MM-DD)
+- A list of `items` where each item includes:
+  - `name`: name or description of the item
+  - `quantity`: numeric quantity
+  - `part_number`: SKU or part number if available
+
+Example format:
+{
+  "due_date": "2025-05-28",
+  "items": [
+    {
+      "name": "Nutanix Cloud Infrastructure (NCI) Ultimate Software License",
+      "quantity": 5152,
+      "part_number": "SW-NCI-ULT-FP"
+    }
+  ]
+}
+
+Only return valid JSON. Do not include commentary, explanations, or markdown formatting.
+Here is the raw RFQ text:
+
+---
+{{RFQ_TEXT}}
+---
