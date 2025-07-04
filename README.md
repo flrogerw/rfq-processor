@@ -21,22 +21,22 @@ This system is designed to automate the intake, parsing, and processing of RFQs 
 
 ## Architecture Summary:
 
-### Email Ingestion:
+### Email Ingestion: <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/classes/EmailIngestor.py" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
 - Emails are ingested via IMAP or from .eml files. The EmailIngestor class handles deduplication using Message-ID and logs processed messages using MessageLogStore backed by PostgreSQL.
 
-### Email Preprocessing:
+### Email Preprocessing: <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/classes/EmailPreprocessor.py" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
 - The email body is cleaned (HTML stripped, forwarded headers removed), and attachments like PDFs or spreadsheets are parsed using pdfplumber and pandas. These contents are normalized into a single searchable block of text.
 
-### Line Item Extraction:
+### Line Item Extraction:  <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/parsers/sewp_bid_parser.py" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
 - Line items are extracted from email content or attachments. Each line item contains product name, part number, quantity, and optionally a delivery region.
 
-### Hybrid Supplier Matching:
+### Hybrid Supplier Matching:  <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/classes/HybridSupplierMatcher.py" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
 - The HybridSupplierMatcher class matches each RFQ line item to products in the supplier_products table using a hybrid scoring mechanism:
 
-### Semantic similarity: 
+### Semantic similarity: <a href="https://github.com/flrogerw/rfq-processor/blob/59fa2ebfc965c01015de8695ec73b00a0b318678/app/classes/HybridSupplierMatcher.py#L55" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
 - Vector search using pgvector and sentence-transformers to compare item descriptions.
 
-### Part number similarity: 
+### Part number similarity: <a href="https://github.com/flrogerw/rfq-processor/blob/59fa2ebfc965c01015de8695ec73b00a0b318678/app/classes/HybridSupplierMatcher.py#L40" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
 - Exact and fuzzy string matching using trigram similarity (pg_trgm).
 
 ### Optional region filter: 
@@ -127,7 +127,7 @@ If an RFQ line item specifies a `delivery_region`, only products with a matching
 **3. Surfacing in the UI**
 The UI (or CLI prototype) receives the following structured output for each matched line item:
 
-```json
+```
 [
   {
     "line_item": "Cisco Switch 9300",
@@ -148,6 +148,85 @@ The UI (or CLI prototype) receives the following structured output for each matc
 Each match includes the product details, supplier contact info, and a confidence score. This enables clear visibility for users to review and take action, with potential support for ranking filters or confidence-based auto-selection.
 
 This matching logic ensures high performance via native database execution and high accuracy through LLM-augmented inputs and hybrid scoring.
+
+---
+
+### Bid Source Abstraction Design
+
+The system is designed to support multiple bid sources with varying formats—from well-structured attachments (e.g. SEWP) to entirely unstructured emails—by using a flexible, modular **parser abstraction layer** built on the **Factory pattern**.
+
+#### 1. Parser Abstraction via Factory
+
+All bid source parsers implement a common interface to return structured data with two fields:
+
+```python
+{
+  "due_date": "YYYY-MM-DD",
+  "items": [
+    {
+      "part_number": "...",
+      "name": "...",
+      "quantity": int,
+      "delivery_region": "optional"
+    },
+    ...
+  ]
+}
+```
+
+A `BidParserFactory` selects the appropriate parser dynamically:
+
+```python
+parser = BidParserFactory.get_parser(source_type)
+parsed_data = parser.extract_fields(email_text, attachments)
+```
+
+#### 2. Structured Parser: `SEWPBidParser`
+
+* Parses well-defined fields from email bodies and pipe-delimited text files (`line_items.txt`).
+* Extracts `Reply by Date` as the due date using regex.
+* Maps `part_number`, `name`, and `quantity`, and detects lines specifying `delivery_region`.
+* Returns clean, structured line items with minimal transformation overhead.
+
+#### 3. Unstructured Parser: `LLMBidParser`
+
+* Used as a fallback for freeform or poorly formatted bids.
+* Dynamically fills a prompt with RFQ text and sends it to an LLM (e.g. GPT-4).
+* Uses retries and validation to ensure the response is valid JSON.
+* Extracts `due_date` and `items` from model output using a strict schema check.
+
+Example prompt-based request flow:
+
+```python
+prompt = PROMPT_TEMPLATE.replace("{{RFQ_TEXT}}", email_body_and_attachments)
+response = llm.chat(prompt)
+parsed = json.loads(response)
+```
+
+#### 4. Benefits
+
+* **Flexibility**: New sources (e.g. GSA, proprietary platforms) can be supported by adding a new parser class.
+* **Fallback resilience**: Unstructured content defaults to LLM-based extraction.
+* **Testability**: Each parser is independently testable and highly modular.
+* **Scalability**: Parsers are isolated from downstream components like supplier matching and UI layers.
+
+This design gives the system the power to **seamlessly ingest, normalize, and process diverse bid formats** while keeping parsing logic cleanly separated and easily extensible.
+
+---
+
+### Supplier Autofill Dropdown Mockup
+
+The mockup below illustrates how the supplier autofill feature will assist users when composing a response email to a Request for Quote (RFQ). As the user begins typing a product name or part number, the system dynamically queries the matched supplier database and presents a ranked dropdown of suggested products. Each suggestion includes:
+
+* **Product name and part number**
+* **Supplier name and contact email**
+* **Price and country of origin**
+
+This feature improves speed and accuracy by reducing manual data entry and surfacing the most relevant supplier matches based on hybrid scoring (vector + part number similarity). Selecting a suggestion automatically populates the relevant fields into the reply template.
+
+
+<img src="img.png" alt="Supplier Autofill Mockup" width="500"/>
+
 
 
 ## Project Structure
