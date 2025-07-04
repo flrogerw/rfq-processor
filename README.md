@@ -39,11 +39,12 @@ A robust Python application for ingesting, parsing, and logging RFQ (Request For
 
 ## Setup
 
-### 1. Clone the repository
+### 1. Clone and Run the repository
 
 ```bash
-git clone https://github.com/your-org/rfq-processor.git
+git clone https://github.com/flrogerw/rfq-processor.git
 cd rfq-processor
+docker compose up
 ```
 ## Future Ideas
 - NLP entity extraction from RFQs
