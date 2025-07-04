@@ -4,7 +4,7 @@ services:
   db:
     image: ankane/pgvector
     container_name: pgvector-db
-    restart: always
+    restart: no
     ports:
       - "5432:5432"
     environment:
@@ -16,6 +16,7 @@ services:
   app:
     build: ./app
     container_name: rfq-app
+    restart: no
     depends_on:
       - db
     environment:

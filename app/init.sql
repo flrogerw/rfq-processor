@@ -1,5 +1,6 @@
 -- Enable pgvector
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- Drop tables
 DROP TABLE IF EXISTS suppliers CASCADE;
