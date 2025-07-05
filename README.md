@@ -27,8 +27,7 @@ A Python application for ingesting, parsing, and logging RFQ (Request For Quote)
 - Parses one of the sample SWEP emails.
 - Prints the extracted data to stdout.
 - Searches the database for relevant matches.
-- Prints the line item and the search results to the screen.
-
+- Prints the line item and the search results to stdout.
 
 
 ## Folder Structure
@@ -65,6 +64,7 @@ rfq_processor/
 ```bash
 git clone https://github.com/flrogerw/rfq-processor.git
 cd rfq-processor
+chmod +x app/entrypoint.sh   # Shouldn't have to do this, but won't work if you don't.
 docker-compose up --abort-on-container-exit
 
 # Some systems
