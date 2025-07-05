@@ -1,79 +1,111 @@
-import threading
-import psycopg2
-from psycopg2.extensions import connection as PGConnection
+#!/usr/bin/env python3
+"""Singleton PostgreSQL connection handler with pgvector support.
+
+This module defines a thread-safe singleton class `PostgresSingleton` that provides
+shared psycopg2 connection instances across the application. It ensures that
+the `pgvector` extension is available for use in vector similarity queries.
+
+Environment variables required for connection:
+- DATABASE
+- DB_USER
+- DB_PASSWORD
+- DB_HOST
+- DB_PORT (optional, defaults to 5432)
+"""
+
+from __future__ import annotations
+
 import os
-from typing import Optional, Dict
+import threading
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from psycopg2.extensions import connection as PGConnection
 
 
 class PostgresSingleton:
-    """
-    A thread-safe singleton class that returns a psycopg2 PostgreSQL connection.
-    It uses a DSN (Data Source Name) string as the key to ensure only one connection
-    per unique database configuration. Also ensures that the `pgvector` extension
-    is enabled on the first connection.
+    """Thread-safe singleton for PostgreSQL connections via psycopg2.
+
+    Ensures a single connection instance per unique DSN. Automatically enables
+    the `pgvector` extension if not already present.
+
+    Use this class to retrieve shared database connections throughout the application.
     """
 
-    _instances: Dict[str, "PostgresSingleton"] = {}
-    _connections: Dict[str, PGConnection] = {}
-    _lock = threading.Lock()
+    # Class-level shared connection map and thread lock
+    _instances: ClassVar[dict[str, PostgresSingleton]] = {}
+    _connections: ClassVar[dict[str, PGConnection]] = {}
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
-    def __new__(cls, dsn: Optional[str] = None) -> PGConnection:
-        """
-        Returns a singleton psycopg2 connection for the given DSN.
-        If the connection does not exist yet, it is created and pgvector is initialized.
+    def __new__(cls, dsn: str | None = None) -> PGConnection:
+        """Get or create a singleton PostgreSQL connection.
 
         Args:
-            dsn (Optional[str]): The database connection string (DSN).
-                                 If not provided, it will be built from environment variables.
+            dsn (Optional[str]): The database connection string.
+                If None, it is built from environment variables.
 
         Returns:
-            PGConnection: A live psycopg2 PostgreSQL connection.
+            PGConnection: A reusable psycopg2 connection instance.
+
+        Raises:
+            Exception: If connection or extension setup fails.
+
         """
         dsn = dsn or cls._build_dsn_from_env()
 
         with cls._lock:
             if dsn not in cls._connections:
                 try:
-                    # Create a new database connection
+                    # Establish a new PostgreSQL connection
+                    import psycopg2
                     conn = psycopg2.connect(dsn)
                     conn.autocommit = True
 
-                    # Enable pgvector extension (only if it doesn't exist)
+                    # Ensure pgvector extension is available
                     with conn.cursor() as cur:
                         cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
-                    print("Connected to PostgreSQL and ensured pgvector is available.")
+                    print("[INFO] Connected to PostgreSQL and ensured pgvector is available.")
                     cls._connections[dsn] = conn
 
                 except Exception as e:
-                    print(f"[ERROR] Failed to connect to PostgreSQL: {e}")
-                    raise  # Let caller handle or crash
+                    print(f"[ERROR] Failed to connect to PostgreSQL with DSN {dsn}: {e}")
+                    raise
 
             return cls._connections[dsn]
 
     @staticmethod
     def _build_dsn_from_env() -> str:
-        """
-        Builds a PostgreSQL DSN (Data Source Name) from environment variables.
+        """Construct a PostgreSQL DSN string using environment variables.
 
-        Environment Variables Required:
-            - DATABASE: name of the PostgreSQL database
-            - DB_USER: username for the database
-            - DB_PASSWORD: password for the user
-            - DB_HOST: host of the PostgreSQL server
-            - DB_PORT: port number (defaults to 5432)
+        Expects the following environment variables:
+            - DATABASE
+            - DB_USER
+            - DB_PASSWORD
+            - DB_HOST
+            - DB_PORT (optional, defaults to 5432)
 
         Returns:
-            str: A DSN string in the format used by psycopg2.
+            str: A psycopg2-compatible DSN string.
+
+        Raises:
+            ValueError: If any required environment variable is missing.
+
         """
         try:
-            return (
-                f"dbname={os.getenv('DATABASE')} "
-                f"user={os.getenv('DB_USER')} "
-                f"password={os.getenv('DB_PASSWORD')} "
-                f"host={os.getenv('DB_HOST')} "
-                f"port={os.getenv('DB_PORT', '5432')}"
-            )
+            dbname = os.getenv("DATABASE")
+            user = os.getenv("DB_USER")
+            password = os.getenv("DB_PASSWORD")
+            host = os.getenv("DB_HOST")
+            port = os.getenv("DB_PORT", "5432")
+
+            if not all([dbname, user, password, host]):
+                error_message = "Missing required environment variables for DSN."
+                raise ValueError(error_message)
+
         except Exception as e:
             print(f"[ERROR] Failed to build DSN from environment: {e}")
             raise
+
+        else:
+            return f"dbname={dbname} user={user} password={password} host={host} port={port}"

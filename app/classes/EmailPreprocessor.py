@@ -1,84 +1,97 @@
-from bs4 import BeautifulSoup
+#!/usr/bin/env python3
+"""EmailPreprocessor module for cleaning email bodies and extracting text from attachments.
+
+Supports PDF and Excel files, with placeholders for future DOCX support.
+"""
+
 import re
-import pdfplumber
-import pandas as pd
 from io import BytesIO
-from typing import Dict
+
+import pandas as pd
+import pdfplumber
+from bs4 import BeautifulSoup
 
 
 class EmailPreprocessor:
-    """
-    A utility class for preprocessing email content and extracting readable text
-    from supported attachments such as PDFs and Excel files.
+    """A utility class for cleaning and preprocessing email content.
+
+    Includes support for:
+    - HTML body cleaning
+    - PDF and Excel attachment parsing
+    - Email + attachment text normalization for downstream use (e.g. vector embeddings)
     """
 
     @staticmethod
     def clean_email_body(raw_email: str) -> str:
-        """
-        Cleans HTML email content by removing markup, forwarded/reply headers,
-        footers, and extra whitespace.
+        """Clean HTML email content by removing tags, headers, footers, and excess whitespace.
 
         Args:
-            raw_email (str): The raw HTML email body as a string.
+            raw_email (str): Raw HTML or plain text from an email body.
 
         Returns:
-            str: Cleaned plain-text email body.
+            str: Cleaned plain-text version of the email.
+
         """
         try:
-            # Strip HTML tags and decode entities
+            # Remove HTML tags
             soup = BeautifulSoup(raw_email, 'html.parser')
             text = soup.get_text()
 
-            # Remove common reply/forward headers
+            # Remove forwarded/reply headers
             text = re.sub(r'(?i)^From:.*?$', '', text, flags=re.MULTILINE)
             text = re.sub(r'(?i)^Sent:.*?$', '', text, flags=re.MULTILINE)
 
-            # Remove footers or signature separators
+            # Remove common signature delimiter
             text = re.sub(r'(?i)--+.*', '', text)
 
-            # Collapse multiple newlines into one
+            # Collapse excessive newlines
             text = re.sub(r'\n+', '\n', text)
 
             return text.strip()
+
         except Exception as e:
             print(f"[ERROR] Failed to clean email body: {e}")
-            return raw_email  # Return original in case of failure
+            return raw_email  # Return original input on failure
 
     def extract_attachment_text(self, file_bytes: bytes, filename: str) -> str:
-        """
-        Extracts readable text from supported attachment formats.
+        """Extract readable text from PDF or Excel attachments.
 
         Args:
-            file_bytes (bytes): Raw file content.
-            filename (str): Original filename for extension detection.
+            file_bytes (bytes): Raw bytes of the file.
+            filename (str): File name (used to detect file type).
 
         Returns:
-            str: Extracted text, or an empty string if unsupported or failed.
+            str: Extracted text or placeholder if unsupported or failed.
+
         """
         try:
             if filename.endswith('.pdf'):
                 return self._extract_pdf(file_bytes)
-            elif filename.endswith('.xlsx'):
+
+            if filename.endswith('.xlsx'):
                 return self._extract_excel(file_bytes)
-            elif filename.endswith('.docx'):
-                return "[DOCX parsing not implemented]"  # Stub
-            else:
-                print(f"[INFO] Unsupported attachment type: {filename}")
-                return ""
+
+            if filename.endswith('.docx'):
+                # Placeholder for future implementation
+                return "[DOCX parsing not implemented]"
+
+            print(f"[INFO] Unsupported attachment type: {filename}")
+            return ""
+
         except Exception as e:
             print(f"[ERROR] Failed to extract text from {filename}: {e}")
             return ""
 
     @staticmethod
     def _extract_pdf(file_bytes: bytes) -> str:
-        """
-        Extracts text from a PDF file using pdfplumber.
+        """Extract text from a PDF file using pdfplumber.
 
         Args:
             file_bytes (bytes): Raw PDF file content.
 
         Returns:
-            str: All extracted text from PDF pages.
+            str: Extracted text from all pages, or empty string if failed.
+
         """
         try:
             text = ""
@@ -88,45 +101,51 @@ class EmailPreprocessor:
                     if page_text:
                         text += page_text + "\n"
             return text.strip()
+
         except Exception as e:
             print(f"[ERROR] Failed to extract PDF text: {e}")
             return ""
 
     @staticmethod
     def _extract_excel(file_bytes: bytes) -> str:
-        """
-        Extracts text from an Excel spreadsheet using pandas.
+        """Extract text from an Excel spreadsheet using pandas.
 
         Args:
             file_bytes (bytes): Raw Excel file content.
 
         Returns:
-            str: Table content as string with no row index.
+            str: Tabular data as a string without row indices.
+
         """
         try:
-            df = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
-            return df.to_string(index=False)
+            dataframe = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
+            return dataframe.to_string(index=False)
+
         except Exception as e:
             print(f"[ERROR] Failed to extract Excel content: {e}")
             return ""
 
     @staticmethod
-    def normalize_text_blocks(email_text: str, attachments: Dict[str, str]) -> str:
-        """
-        Combines email body and attachments into a single normalized string.
+    def normalize_text_blocks(email_text: str, attachments: dict[str, str]) -> str:
+        """Combine email body and attachment texts into one unified string.
 
         Args:
-            email_text (str): Cleaned email body.
+            email_text (str): Cleaned body of the email.
             attachments (Dict[str, str]): Mapping of filename to extracted text.
 
         Returns:
-            str: Unified text content for downstream NLP or vector embedding.
+            str: Unified text content suitable for embedding or downstream processing.
+
         """
         try:
             sections = [email_text]
+
             for name, content in attachments.items():
-                sections.append(f"\n--- BEGIN ATTACHMENT: {name} ---\n{content}")
+                section = f"\n--- BEGIN ATTACHMENT: {name} ---\n{content}"
+                sections.append(section)
+
             return "\n\n".join(sections).strip()
+
         except Exception as e:
             print(f"[ERROR] Failed to normalize email and attachments: {e}")
             return email_text

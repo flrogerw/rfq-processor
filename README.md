@@ -1,11 +1,15 @@
 # RFQ Processor
 
-A robust Python application for ingesting, parsing, and logging RFQ (Request For Quote) emails from an IMAP mailbox or `.eml` files. It supports attachment extraction (PDF, Excel), text normalization, deduplication using `Message-ID`, and embedding product data into a Postgres + `pgvector` database.
+A Python application for ingesting, parsing, and logging RFQ (Request For Quote) emails from an IMAP mailbox or `.eml` files. It supports attachment extraction (PDF, Excel), text normalization, deduplication using `Message-ID`, and embedding product data into a Postgres + `pgvector` database.
 
 ---
 
-## Features
+## Assumptions
+- That SEWP format and others like it are 'structured' and little to no LLM interaction would be needed.
+- The system would be parsing both static eml files and checking mail boxes.
+- The system may be used in a threaded environment for scalability.
 
+## Features
 -  IMAP and `.eml` email ingestion
 -  Deduplication via `Message-ID` and `MessageLogStore`
 -  Attachment parsing: PDF, Excel (`.pdf`, `.xlsx`)
@@ -21,22 +25,22 @@ This system is designed to automate the intake, parsing, and processing of RFQs 
 
 ## Architecture Summary:
 
-### Email Ingestion: <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/classes/EmailIngestor.py" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
+### Email Ingestion: <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/classes/EmailIngestor.py" style="font-size: 12px; font-weight:normal; ">(code sample)</a>
 - Emails are ingested via IMAP or from .eml files. The EmailIngestor class handles deduplication using Message-ID and logs processed messages using MessageLogStore backed by PostgreSQL.
 
-### Email Preprocessing: <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/classes/EmailPreprocessor.py" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
+### Email Preprocessing: <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/classes/EmailPreprocessor.py" style="font-size: 12px; font-weight:normal; ">(code sample)</a>
 - The email body is cleaned (HTML stripped, forwarded headers removed), and attachments like PDFs or spreadsheets are parsed using pdfplumber and pandas. These contents are normalized into a single searchable block of text.
 
-### Line Item Extraction:  <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/parsers/sewp_bid_parser.py" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
+### Line Item Extraction:  <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/parsers/sewp_bid_parser.py" style="font-size: 12px; font-weight:normal; ">(code sample)</a>
 - Line items are extracted from email content or attachments. Each line item contains product name, part number, quantity, and optionally a delivery region.
 
-### Hybrid Supplier Matching:  <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/classes/HybridSupplierMatcher.py" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
+### Hybrid Supplier Matching:  <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/classes/HybridSupplierMatcher.py" style="font-size: 12px; font-weight:normal; ">(code sample)</a>
 - The HybridSupplierMatcher class matches each RFQ line item to products in the supplier_products table using a hybrid scoring mechanism:
 
-### Semantic similarity: <a href="https://github.com/flrogerw/rfq-processor/blob/59fa2ebfc965c01015de8695ec73b00a0b318678/app/classes/HybridSupplierMatcher.py#L55" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
+### Semantic similarity: <a href="https://github.com/flrogerw/rfq-processor/blob/59fa2ebfc965c01015de8695ec73b00a0b318678/app/classes/HybridSupplierMatcher.py#L55" style="font-size: 12px; font-weight:normal; ">(code sample)</a>
 - Vector search using pgvector and sentence-transformers to compare item descriptions.
 
-### Part number similarity: <a href="https://github.com/flrogerw/rfq-processor/blob/59fa2ebfc965c01015de8695ec73b00a0b318678/app/classes/HybridSupplierMatcher.py#L40" style="font-size: 12px; font-weight:normal; font-size:inherit;">(code sample)</a>
+### Part number similarity: <a href="https://github.com/flrogerw/rfq-processor/blob/59fa2ebfc965c01015de8695ec73b00a0b318678/app/classes/HybridSupplierMatcher.py#L40" style="font-size: 12px; font-weight:normal; ">(code sample)</a>
 - Exact and fuzzy string matching using trigram similarity (pg_trgm).
 
 ### Optional region filter: 
@@ -55,7 +59,7 @@ All matching and scoring is done efficiently inside PostgreSQL to avoid expensiv
 
 ---
 
-## LLM Interaction Strategy
+## LLM Interaction Strategy   <a href="https://github.com/flrogerw/rfq-processor/blob/main/app/parsers/llm_bid_parser.py" style="font-size: 12px; font-weight:normal;">(code sample)</a>
 The system is designed to extract meaningful, structured data from unstructured RFQ emails by leveraging an LLM (Large Language Model) in a controlled, modular pipeline.
 
 ### Extraction and Cleaning
@@ -225,30 +229,7 @@ The mockup below illustrates how the supplier autofill feature will assist users
 This feature improves speed and accuracy by reducing manual data entry and surfacing the most relevant supplier matches based on hybrid scoring (vector + part number similarity). Selecting a suggestion automatically populates the relevant fields into the reply template.
 
 
-<img src="img.png" alt="Supplier Autofill Mockup" width="500"/>
-
-
-
-## Project Structure
-```
-├── app/
-│ ├── classes/
-│ │ ├── EmailIngestor.py
-│ │ ├── EmailPreprocessor.py
-│ │ ├── MessageLogStore.py
-│ │ └── PostgresSingleton.py
-│ ├── utils/
-│ │ └── SupplierDataLoader.py
-│ └── main.py
-├── samples/
-│ └── supplier_products.csv
-├── .env
-├── requirements.txt
-└── README.md
-```
-
-
-
+<img src="./img.png" alt="Supplier Autofill Mockup" width="500"/>
 
 
 ---

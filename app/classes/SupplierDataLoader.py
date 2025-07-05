@@ -1,58 +1,71 @@
+#!/usr/bin/env python3
+"""SupplierDataLoader: Load supplier and product data into a PostgreSQL database.
+
+Includes optional generation of dummy suppliers and vector embeddings for
+semantic search via sentence-transformers and pgvector.
+"""
+
 import csv
-import os
+from pathlib import Path
+
 from sentence_transformers import SentenceTransformer
+
 from .PostgresSingleton import PostgresSingleton  # Returns a psycopg2 connection
 
 
 class SupplierDataLoader:
-    """
-    Handles loading supplier and product data into a PostgreSQL database.
-    Uses SentenceTransformer to compute embeddings for product names.
+    """Handles ingestion of supplier and product data into a PostgreSQL database.
+
+    Utilizes sentence-transformers to encode product names into vector embeddings
+    for use with the pgvector extension.
     """
 
-    def __init__(self, csv_path: str, model_name: str = "sentence-transformers/paraphrase-mpnet-base-v2"):
-        """
-        Initializes the data loader with a CSV path and embedding model.
+    def __init__(self, csv_path: str, model_name: str = "sentence-transformers/paraphrase-mpnet-base-v2") -> None:
+        """Initialize the loader with a CSV path and model for generating embeddings.
 
         Args:
-            csv_path (str): Path to the CSV file containing product data.
-            model_name (str): Hugging Face model name for generating embeddings.
+            csv_path (str): Path to the product CSV file.
+            model_name (str): SentenceTransformer model name (default: paraphrase-mpnet-base-v2).
+
         """
         self.csv_path = csv_path
         self.model = SentenceTransformer(model_name)
         self.conn = PostgresSingleton()
 
     def insert_supplier(self, name: str, email: str) -> int:
-        """
-        Inserts a supplier into the database and returns the new supplier ID.
+        """Insert a supplier into the suppliers table.
 
         Args:
             name (str): Supplier name.
             email (str): Supplier email address.
 
         Returns:
-            int: The ID of the newly inserted supplier.
+            int: The ID of the new supplier or -1 if insertion fails.
+
         """
         try:
             cursor = self.conn.cursor()
             cursor.execute(
                 "INSERT INTO suppliers (name, email) VALUES (%s, %s) RETURNING id",
-                (name, email)
+                (name, email),
             )
             supplier_id = cursor.fetchone()[0]
             self.conn.commit()
-            return supplier_id
+
         except Exception as e:
             print(f"[ERROR] Failed to insert supplier '{name}': {e}")
             self.conn.rollback()
             return -1
 
-    def ensure_dummy_suppliers_exist(self, count: int = 5):
-        """
-        Ensures dummy supplier records exist for testing/demo purposes.
+        else:
+            return supplier_id
+
+    def ensure_dummy_suppliers_exist(self, count: int = 5) -> None:
+        """Insert dummy supplier records if none exist, useful for testing/demo.
 
         Args:
-            count (int): Number of dummy suppliers to insert if none exist.
+            count (int): Number of dummy suppliers to insert if table is empty.
+
         """
         try:
             cursor = self.conn.cursor()
@@ -62,17 +75,21 @@ class SupplierDataLoader:
             if existing == 0:
                 for i in range(1, count + 1):
                     self.insert_supplier(f"Supplier {i}", f"supplier{i}@example.com")
-                print(f"Inserted {count} dummy suppliers.")
+                print(f"[INFO] Inserted {count} dummy suppliers.")
             else:
-                print(f"{existing} suppliers already exist. Skipping dummy insert.")
-        except Exception as e:
-            print(f"[ERROR] Failed to check or insert dummy suppliers: {e}")
+                print(f"[INFO] {existing} suppliers already exist. Skipping dummy insert.")
 
-    def bulk_insert_products(self):
+        except Exception as e:
+            print(f"[ERROR] Failed to check/insert dummy suppliers: {e}")
+
+    def bulk_insert_products(self) -> None:
+        """Load product data from CSV, generate embeddings, and insert into supplier_products table.
+
+        CSV file must have the following headers:
+        - name, part_number, category, supplier_id, price, [origin]
+
         """
-        Loads product data from CSV, generates embeddings, and inserts into the database.
-        """
-        if not os.path.exists(self.csv_path):
+        if not Path(self.csv_path).exists():
             print(f"[ERROR] CSV file not found: {self.csv_path}")
             return
 
@@ -80,22 +97,42 @@ class SupplierDataLoader:
             cursor = self.conn.cursor()
             to_insert = []
 
-            with open(self.csv_path, newline='', encoding='utf-8') as csvfile:
+            # Read CSV file
+            with Path(self.csv_path).open(newline='', encoding='utf-8') as csvfile:
                 reader = csv.DictReader(csvfile)
 
                 for row in reader:
-                    name = row['name'].strip()
-                    part_number = row['part_number'].strip()
-                    category = row['category'].strip()
-                    supplier_id = int(row['supplier_id'])
-                    price = float(row['price'])
-                    origin = row.get('origin', 'United States').strip()
+                    try:
+                        name = row['name'].strip()
+                        part_number = row['part_number'].strip()
+                        category = row['category'].strip()
+                        supplier_id = int(row['supplier_id'])
+                        price = float(row['price'])
+                        origin = row.get('origin', 'United States').strip()
 
-                    # Generate vector embedding for product name
-                    embedding = self.model.encode(name).tolist()
-                    to_insert.append((name, part_number, category, embedding, supplier_id, price, origin))
+                        # Compute vector embedding for product name
+                        embedding = self.model.encode(name).tolist()
 
-            # Prepare bulk insert SQL
+                        to_insert.append((
+                            name,
+                            part_number,
+                            category,
+                            embedding,
+                            supplier_id,
+                            price,
+                            origin,
+                        ))
+
+                    except KeyError as ke:
+                        print(f"[WARN] Skipping row with missing field: {ke}")
+                    except Exception as e:
+                        print(f"[WARN] Failed to process row: {e}")
+
+            if not to_insert:
+                print("[WARN] No valid rows to insert.")
+                return
+
+            # Bulk insert using psycopg2 mogrify for efficient parameterization
             args_str = ",".join(
                 cursor.mogrify("(%s, %s, %s, %s, %s, %s, %s)", row).decode("utf-8")
                 for row in to_insert
@@ -106,12 +143,11 @@ class SupplierDataLoader:
                 INSERT INTO supplier_products
                 (name, part_number, category, embedding, supplier_id, price, origin)
                 VALUES {args_str}
-                """
+                """,
             )
             self.conn.commit()
-            print(f"Inserted {len(to_insert)} products from CSV.")
+            print(f"[INFO] Inserted {len(to_insert)} products from CSV.")
 
         except Exception as e:
             print(f"[ERROR] Failed to bulk insert products: {e}")
             self.conn.rollback()
-

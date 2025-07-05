@@ -1,5 +1,8 @@
+#!/usr/bin/env python3
 import csv
 import random
+from pathlib import Path
+
 from faker import Faker
 
 fake = Faker()
@@ -27,10 +30,9 @@ base_products = [
 def get_category(part_number):
     if part_number.startswith("SW") or part_number.startswith("SWA"):
         return "software"
-    elif part_number.startswith("RS") or part_number.startswith("U-") or part_number.startswith("S-") or part_number.startswith("CNS"):
+    if part_number.startswith("RS") or part_number.startswith("U-") or part_number.startswith("S-") or part_number.startswith("CNS"):
         return "hardware"
-    else:
-        return "software" if random.random() < 0.5 else "hardware"
+    return "software" if random.random() < 0.5 else "hardware"
 
 
 
@@ -43,7 +45,7 @@ for part_number, name in base_products:
         "supplier_id": random.randint(1, 5),
         "category": get_category(part_number),
         "origin": "United States",
-        "price": round(random.uniform(50.00, 5000.00), 2)
+        "price": round(random.uniform(50.00, 5000.00), 2),
     })
 
 # Generate 100 mock products
@@ -58,14 +60,13 @@ for _ in range(100):
         "supplier_id": random.randint(1, 5),
         "category": category,
         "origin": "United States",
-        "price": round(random.uniform(50.00, 5000.00), 2)
+        "price": round(random.uniform(50.00, 5000.00), 2),
     })
 
 # Write to CSV
 csv_path = "../samples/supplier_products.csv"
-with open(csv_path, mode="w", newline="", encoding="utf-8") as file:
+with Path.open()(csv_path, mode="w", newline="", encoding="utf-8") as file:
     writer = csv.DictWriter(file, fieldnames=["name", "part_number", "supplier_id", "category", "origin", "price"])
     writer.writeheader()
     writer.writerows(products)
 
-csv_path
