@@ -66,5 +66,8 @@ rfq_processor/
 git clone https://github.com/flrogerw/rfq-processor.git
 cd rfq-processor
 docker-compose up --abort-on-container-exit
+
+# Some systems
+docker compose up --abort-on-container-exit
 ```
 
