@@ -106,55 +106,49 @@ class HybridSupplierMatcher:
         if not vector:
             return []
 
-        # Base query with placeholders for similarity weights and vector
+        # Define the base query string (with format placeholders for weights)
         base_query = f"""
-            SELECT
+        WITH base_scores AS (
+            SELECT 
                 sp.id,
                 sp.name,
                 sp.part_number,
+                sp.origin,
                 s.name AS supplier_name,
                 s.email,
                 1 - (sp.embedding <=> %s::vector) AS vector_similarity,
                 CASE
-                    WHEN %s IS NOT NULL AND sp.part_number = %s THEN 1.0
                     WHEN %s IS NOT NULL THEN similarity(sp.part_number, %s)
                     ELSE 0.0
-                END AS pn_score,
-                ({vector_weight} * (1 - (sp.embedding <=> %s::vector))) +
-                ({pn_boost_weight} * CASE
-                    WHEN %s IS NOT NULL AND sp.part_number = %s THEN 1.0
-                    WHEN %s IS NOT NULL THEN similarity(sp.part_number, %s)
-                    ELSE 0.0
-                END) AS hybrid_score
+                END AS pn_score
             FROM supplier_products sp
             JOIN suppliers s ON sp.supplier_id = s.id
-            WHERE
-                ({vector_weight} * (1 - (sp.embedding <=> %s::vector))) +
-                ({pn_boost_weight} * CASE
-                    WHEN %s IS NOT NULL AND sp.part_number = %s THEN 1.0
-                    WHEN %s IS NOT NULL THEN similarity(sp.part_number, %s)
-                    ELSE 0.0
-                END) >= %s
+            WHERE 1=1
         """
 
+        # Initialize query params
         params = [
             vector,
-            item_part_number, item_part_number,
-            item_part_number, item_part_number,
-            vector,
-            item_part_number, item_part_number,
-            item_part_number, item_part_number,
-            vector,
-            item_part_number, item_part_number,
-            item_part_number, item_part_number,
-            similarity_threshold,
+            item_part_number, item_part_number
         ]
 
-        # Add region filter if specified
+        # Conditionally add delivery_region filter
         if delivery_region:
             base_query += " AND sp.origin = %s"
             params.append(delivery_region)
 
+        # Append hybrid_score computation and final selection
+        base_query += f"""
+        ),
+        ranked AS (
+            SELECT *,
+                ({vector_weight} * vector_similarity) + ({pn_boost_weight} * pn_score) AS hybrid_score
+            FROM base_scores
+        )
+        SELECT * FROM ranked
+        WHERE hybrid_score >= %s
+        """
+        params.append(similarity_threshold)
         base_query += " ORDER BY hybrid_score DESC LIMIT %s"
         params.append(top_k)
 
