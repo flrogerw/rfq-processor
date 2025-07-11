@@ -159,7 +159,6 @@ class HybridSupplierMatcher:
             cur.execute(base_query, params)
 
             for row in cur.fetchall():
-                print(row)
                 product = {
                     "id": row[0],
                     "name": row[1],
