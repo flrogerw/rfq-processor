@@ -159,12 +159,13 @@ class HybridSupplierMatcher:
             cur.execute(base_query, params)
 
             for row in cur.fetchall():
+                print(row)
                 product = {
                     "id": row[0],
                     "name": row[1],
                     "part_number": row[2],
-                    "supplier_name": row[3],
-                    "email": row[4],
+                    "supplier_name": row[4],
+                    "email": row[5],
                 }
                 score = row[7]  # hybrid_score
                 results.append((product, round(score, 4)))
